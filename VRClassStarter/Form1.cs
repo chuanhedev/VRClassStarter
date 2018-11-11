@@ -24,6 +24,7 @@ namespace VRClassUpdater
         //string downloadRoot = "http://www.iyoovr.com/vrclass/";
         string tempFolderPath = "temp/";
         string serverFolderPath = "server/";
+        string clientFolderPath = "client/";
         string serverResourcesPath = "resources/";
         WebClient webClient;
         // List<string> files = new List<string>();
@@ -35,6 +36,8 @@ namespace VRClassUpdater
         string serverFileName = "server.zip";
         string localConfigFileName = "config.json";
         string versionNumber;
+        JObject localVersion;
+        JObject serverVersion;
 
         public Form1()
         {
@@ -43,13 +46,10 @@ namespace VRClassUpdater
 
         private async void Form1_Load(object sender, EventArgs e)
         {
-            Debug.WriteLine("hello Form1_Load");
-            JObject localVersion = await GetLocalVersion();
-            Debug.WriteLine(localVersion);
-            JObject serverVersion;
+            await GetLocalVersion();
             try
             {
-                serverVersion = await GetServerVersion();
+                await GetServerVersion();
             }
             catch(Exception ex)
             {
@@ -60,6 +60,13 @@ namespace VRClassUpdater
             //JObject sv = JObject.Parse(serverVersion);
             Debug.WriteLine("localVersion " + localVersion["version"]);
             Debug.WriteLine("serverVersion " + serverVersion["version"]);
+
+            if( serverVersion["update"].ToString() == "0")
+            {
+                Debug.WriteLine("NO UPDATE ");
+                OpenTeacherClient();
+                return;
+            }
             fileInfos = (JArray)serverVersion["files"];
             Debug.WriteLine(fileInfos.Count);
             if (!Directory.Exists(tempFolderPath))
@@ -157,12 +164,21 @@ namespace VRClassUpdater
             }
         }
 
+        private void CreateDirectory(string dir)
+        {
+            if (!Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+        }
+
         private void UpdateServerFolder()
         {
             Debug.WriteLine("UpdateServerFolder");
+            CreateDirectory(serverFolderPath);
             if (updateServer)
             {
-                DirectoryInfo di = new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), "server"));
+                DirectoryInfo di = new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), serverFolderPath));
                 foreach (FileInfo file in di.GetFiles())
                 {
                     file.Delete();
@@ -172,7 +188,7 @@ namespace VRClassUpdater
                     if (dir.Name != "resources") 
                         dir.Delete(true);
                 }
-                System.IO.Compression.ZipFile.ExtractToDirectory(Path.Combine(Directory.GetCurrentDirectory(), tempFolderPath, serverFileName), Path.Combine(Directory.GetCurrentDirectory(), "server"));
+                System.IO.Compression.ZipFile.ExtractToDirectory(Path.Combine(Directory.GetCurrentDirectory(), tempFolderPath, serverFileName), Path.Combine(Directory.GetCurrentDirectory(), serverFolderPath));
              
             }
         }
@@ -180,9 +196,10 @@ namespace VRClassUpdater
         private void UpdateTeacherFolder()
         {
             Debug.WriteLine("UpdateTeacherFolder");
+            CreateDirectory(clientFolderPath);
             if (updateClient)
             {
-                DirectoryInfo di = new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), "client"));
+                DirectoryInfo di = new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), clientFolderPath));
                 foreach (FileInfo file in di.GetFiles())
                 {
                     file.Delete();
@@ -192,7 +209,7 @@ namespace VRClassUpdater
                     if (dir.Name != "") ;
                     dir.Delete(true);
                 }
-                System.IO.Compression.ZipFile.ExtractToDirectory(Path.Combine(Directory.GetCurrentDirectory(), tempFolderPath, teacherFileName), Path.Combine(Directory.GetCurrentDirectory(), "client"));
+                System.IO.Compression.ZipFile.ExtractToDirectory(Path.Combine(Directory.GetCurrentDirectory(), tempFolderPath, teacherFileName), Path.Combine(Directory.GetCurrentDirectory(), clientFolderPath));
                 //UnpackFiles(Path.Combine(Directory.GetCurrentDirectory(), tempFolderPath, teacherFileName), Path.Combine(Directory.GetCurrentDirectory(), "client"));
                 Debug.WriteLine("done");
             }
@@ -204,6 +221,7 @@ namespace VRClassUpdater
             UpdateServerFolder();
             UpdateTeacherFolder();
             OpenTeacherClient();
+            SaveVersion();
         }
 
         //private void ZipFileProgress(object sender, ProgressEventArgs args)
@@ -244,6 +262,15 @@ namespace VRClassUpdater
         {
             JToken fileInfo2= fileInfos[fileIndex];
             Debug.WriteLine("Wb_DownloadDataCompleted" + " " +fileInfo2["path"]+ fileInfo2["name"]);
+
+            string destPath = Path.Combine(serverFolderPath, "resources", fileInfo2["path"].ToString());
+            if (!Directory.Exists(destPath))
+            {
+                Directory.CreateDirectory(destPath);
+            }
+            File.Copy(Path.Combine(tempFolderPath, fileInfo2["path"].ToString(), fileInfo2["name"].ToString()),
+               Path.Combine(destPath, fileInfo2["name"].ToString()), true);
+
             fileIndex++;
             // Debug.WriteLine("Wb_DownloadDataCompleted" + " " + fileIndex + " " + files.Count);
             if (fileIndex < fileInfos.Count)
@@ -284,7 +311,7 @@ namespace VRClassUpdater
             return version;
         }
 
-        private async Task<JObject> GetLocalVersion()
+        private async Task GetLocalVersion()
         {
             String line;
             try
@@ -293,20 +320,23 @@ namespace VRClassUpdater
                 {
                     line = await sr.ReadToEndAsync();
                 }
-                return JObject.Parse(line);
+                localVersion = JObject.Parse(line);
+                versionNumber = localVersion["version"].ToString();
+                //return JObject.Parse(line);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine("GetLocalVersion err");
                 Debug.WriteLine(ex.ToString());
-                versionNumber = "1.0.0";
-                return SaveVersion();
+                versionNumber = "";
+                localVersion =  new JObject();
+                localVersion["version"] = versionNumber;
             }
         }
 
-        private async Task<JObject> GetServerVersion()
+        private async Task GetServerVersion()
         {
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create("http://localhost/vrclass/version.php");
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create("http://localhost/vrclass/version.php?version="+versionNumber);
             request.Method = "Get";
 
             var response = await request.GetResponseAsync();
@@ -317,7 +347,8 @@ namespace VRClassUpdater
                 myResponse = await sr.ReadToEndAsync();
             }
             Debug.WriteLine("result " + myResponse);
-            return JObject.Parse(myResponse);
+            serverVersion =  JObject.Parse(myResponse);
+            versionNumber = serverVersion["version"].ToString();
         }
     }
 }
