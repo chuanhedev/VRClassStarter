@@ -20,19 +20,23 @@ namespace VRClassUpdater
 {
     public partial class Form1 : Form
     {
-        string downloadRoot = "http://localhost/vrclass/resources/";
-        //string downloadRoot = "http://www.iyoovr.com/vrclass/";
+        //string downloadRoot = "http://localhost/vrclass/resources/";
+        string rootUrl = "http://www.iyoovr.com/vrclass/";
+        //string rootUrl = "http://localhost/vrclass/";
+        string downloadRoot;
         string tempFolderPath = "temp/";
-        string serverFolderPath = "server/";
+        string serverFolderPath = "server";
         string clientFolderPath = "client/";
         string serverResourcesPath = "resources/";
         WebClient webClient;
         // List<string> files = new List<string>();
         JArray fileInfos;
         int fileIndex = 0;
-        bool updateClient = false;
+        bool updateTeacher = false;
+        bool updateStudent = false;
         bool updateServer = false;
         string teacherFileName = "teacher.zip";
+        string studentFileName = "student.apk";
         string serverFileName = "server.zip";
         string localConfigFileName = "config.json";
         string versionNumber;
@@ -46,6 +50,7 @@ namespace VRClassUpdater
 
         private async void Form1_Load(object sender, EventArgs e)
         {
+            downloadRoot = rootUrl + "resources/";
             await GetLocalVersion();
             try
             {
@@ -74,8 +79,8 @@ namespace VRClassUpdater
                 Directory.CreateDirectory(tempFolderPath);
             }
 
-            updateClient = serverVersion["update_teacher"].ToString() == "1";
-            if (updateClient)
+            updateTeacher = serverVersion["update_teacher"].ToString() != "0";
+            if (updateTeacher)
             {
                 JObject t = new JObject();
                 t["name"] = teacherFileName;
@@ -83,12 +88,21 @@ namespace VRClassUpdater
                 fileInfos.Add(t);
             }
             //KillNodeProcess();
-            updateServer = serverVersion["update_server"].ToString() == "1";
+            updateServer = serverVersion["update_server"].ToString() != "0";
             if (updateServer)
             {
                 KillNodeProcess();
                 JObject t = new JObject();
                 t["name"] = serverFileName;
+                t["path"] = "";
+                fileInfos.Add(t);
+            }
+
+            updateStudent = serverVersion["update_student"].ToString() != "0";
+            if (updateStudent)
+            {
+                JObject t = new JObject();
+                t["name"] = studentFileName;
                 t["path"] = "";
                 fileInfos.Add(t);
             }
@@ -100,6 +114,7 @@ namespace VRClassUpdater
                webClient = new WebClient();
                webClient.DownloadFileCompleted += WebClient_DownloadFileCompleted;
                webClient.DownloadProgressChanged += Wb_DownloadProgressChanged;
+                CreateDirectory(tempFolderPath + fileInfo["path"]);
                 webClient.DownloadFileAsync(new Uri(downloadRoot + fileInfo["path"] + fileInfo["name"]), tempFolderPath +  fileInfo["path"] + fileInfo["name"]);
                 Debug.WriteLine("downloading ... " + downloadRoot + fileInfo["path"] + fileInfo["name"] + " " + tempFolderPath +  fileInfo["path"] + fileInfo["name"] );
             }
@@ -168,6 +183,7 @@ namespace VRClassUpdater
         {
             if (!Directory.Exists(dir))
             {
+                Debug.WriteLine("create dir " + dir);
                 Directory.CreateDirectory(dir);
             }
         }
@@ -197,7 +213,7 @@ namespace VRClassUpdater
         {
             Debug.WriteLine("UpdateTeacherFolder");
             CreateDirectory(clientFolderPath);
-            if (updateClient)
+            if (updateTeacher)
             {
                 DirectoryInfo di = new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), clientFolderPath));
                 foreach (FileInfo file in di.GetFiles())
@@ -258,16 +274,14 @@ namespace VRClassUpdater
             Application.Exit();
         }
 
-        private void WebClient_DownloadFileCompleted(object sender, AsyncCompletedEventArgs e)
+        private async void WebClient_DownloadFileCompleted(object sender, AsyncCompletedEventArgs e)
         {
             JToken fileInfo2= fileInfos[fileIndex];
             Debug.WriteLine("Wb_DownloadDataCompleted" + " " +fileInfo2["path"]+ fileInfo2["name"]);
 
             string destPath = Path.Combine(serverFolderPath, "resources", fileInfo2["path"].ToString());
-            if (!Directory.Exists(destPath))
-            {
-                Directory.CreateDirectory(destPath);
-            }
+            CreateDirectory(destPath);
+            //await Task.Delay(5000);
             File.Copy(Path.Combine(tempFolderPath, fileInfo2["path"].ToString(), fileInfo2["name"].ToString()),
                Path.Combine(destPath, fileInfo2["name"].ToString()), true);
 
@@ -278,13 +292,7 @@ namespace VRClassUpdater
                 JToken fileInfo= fileInfos[fileIndex];
                 string fileFullName = fileInfo["path"].ToString() + fileInfo["name"];
                 label1.Text = string.Format("下载中({0}/{1})", fileIndex + 1, fileInfos.Count);
-
-                
-                if (!Directory.Exists(tempFolderPath + fileInfo["path"]))
-                {
-                    Directory.CreateDirectory(tempFolderPath + fileInfo["path"]);
-                }
-
+                CreateDirectory(tempFolderPath + fileInfo["path"]);
                 webClient.DownloadFileAsync(new Uri(downloadRoot + fileFullName), tempFolderPath + fileFullName);
                 Debug.WriteLine("downloading2 ... " + downloadRoot + fileInfo["path"] + fileInfo["name"] + " " + tempFolderPath +  fileInfo["path"] + fileInfo["name"] );
             }
@@ -336,7 +344,7 @@ namespace VRClassUpdater
 
         private async Task GetServerVersion()
         {
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create("http://localhost/vrclass/version.php?version="+versionNumber);
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(rootUrl + "version.php?version="+versionNumber);
             request.Method = "Get";
 
             var response = await request.GetResponseAsync();
@@ -347,6 +355,7 @@ namespace VRClassUpdater
                 myResponse = await sr.ReadToEndAsync();
             }
             Debug.WriteLine("result " + myResponse);
+            textBox1.Text = myResponse;
             serverVersion =  JObject.Parse(myResponse);
             versionNumber = serverVersion["version"].ToString();
         }
